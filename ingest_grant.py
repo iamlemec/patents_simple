@@ -14,7 +14,7 @@ from itertools import chain
 import schema
 
 # parse input arguments
-parser = argparse.ArgumentParser(description='China patent parser.')
+parser = argparse.ArgumentParser(description='patent grant parser')
 parser.add_argument('path', type=str, help='path of file to parse')
 parser.add_argument('--db', type=str, default=None, help='database file to store to')
 parser.add_argument('--clobber', action='store_true', help='delete database and restart')
@@ -38,7 +38,7 @@ else:
     raise Exception('Unknown format')
 
 # default values
-skeys = sorted(schema.us_keys)
+skeys = sorted(schema.grant_keys)
 nkeys = len(skeys)
 default = OrderedDict([(k, None) for k in skeys])
 default['gen'] = gen
@@ -49,15 +49,15 @@ if write:
     con = sqlite3.connect(args.db)
     cur = con.cursor()
     if args.clobber:
-        cur.execute('drop table if exists patent')
+        cur.execute('drop table if exists grant')
         cur.execute('drop index if exists idx_patnum')
     sig = ', '.join(['%s text' % k for k in skeys])
-    cur.execute('create table if not exists patent (%s)' % sig)
-    cur.execute('create unique index if not exists idx_patnum on patent (patnum)')
+    cur.execute('create table if not exists grant (%s)' % sig)
+    cur.execute('create unique index if not exists idx_patnum on grant (patnum)')
 
 # storage
 pats = []
-cmd = 'insert or replace into patent values (%s)' % ','.join(['?' for _ in skeys])
+cmd = 'insert or replace into grant values (%s)' % ','.join(['?' for _ in skeys])
 def commit_patents():
     cur.executemany(cmd, pats)
     con.commit()
@@ -116,6 +116,17 @@ def gen3_ipc(ipcsec):
 def raw_text(par,sep=''):
     return sep.join(par.itertext())
 
+def prune_patnum(pn):
+    ret = re.match(r'([a-zA-Z]{1,2})?([0-9]+)', pn)
+    if ret is None:
+        prefix = ''
+        patnum = pn
+    else:
+        prefix, patnum = ret.groups()
+        prefix = '' if prefix is None else prefix
+    patnum = patnum.lstrip('0')[:7]
+    return prefix + patnum
+
 # parse it up
 print('Parsing %s, gen %d' % (fname, gen))
 if gen == 1:
@@ -125,7 +136,7 @@ if gen == 1:
     ipclist = []
     for nline in chain(open(args.path, encoding='latin1'), ['PATN']):
         # peek at next line
-        (ntag, nbuf) = (nline[:4].rstrip(), nline[5:-1])
+        ntag, nbuf = nline[:4].rstrip(), nline[5:-1]
         if tag is None:
             tag = ntag
             buf = nbuf
@@ -154,7 +165,7 @@ if gen == 1:
                     pat['abstract'] += '\n' + buf
         elif tag == 'WKU':
             if sec == 'PATN':
-                pat['patnum'] = buf
+                pat['patnum'] = prune_patnum(buf)
         elif tag == 'ISD':
             if sec == 'PATN':
                 pat['pubdate'] = buf
@@ -196,7 +207,7 @@ elif gen == 2:
 
         # published patent
         pubref = bib.find('B100')
-        pat['patnum'] = get_text(pubref, 'B110/DNUM/PDAT')
+        pat['patnum'] = prune_patnum(get_text(pubref, 'B110/DNUM/PDAT'))
         pat['pubdate'] = get_text(pubref, 'B140/DATE/PDAT')
 
         # filing date
@@ -236,7 +247,7 @@ elif gen == 2:
     # parse mangled xml
     pp = XMLPullParser(tag='PATDOC', events=['end'], recover=True)
     def handle_all():
-        for (_, pat) in pp.read_events():
+        for _, pat in pp.read_events():
             if not handle_patent(pat):
                 return False
         return True
@@ -265,7 +276,7 @@ elif gen == 3:
 
         # published patent
         pubinfo = pubref.find('document-id')
-        pat['patnum'] = get_text(pubinfo, 'doc-number')
+        pat['patnum'] = prune_patnum(get_text(pubinfo, 'doc-number'))
         pat['pubdate'] = get_text(pubinfo, 'date')
 
         # filing date
@@ -304,7 +315,7 @@ elif gen == 3:
     # parse mangled xml
     pp = XMLPullParser(tag='us-patent-grant', events=['end'], recover=True)
     def handle_all():
-        for (_, pat) in pp.read_events():
+        for _, pat in pp.read_events():
             if not handle_patent(pat):
                 return False
         return True

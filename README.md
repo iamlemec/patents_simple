@@ -15,22 +15,10 @@ This will store the results in `patents_cn.db` and output every 10000th patent a
 To load US patent data, which is broken into many smaller files
 
 ```bash
-ls $US_DATA_DIR/*.dat | sort | xargs -n 1 python3 ingest_us.py --db=store/patents_us.db
-ls $US_DATA_DIR/pgb*.xml | sort | xargs -n 1 python3 ingest_us.py --db=store/patents_us.db
-ls $US_DATA_DIR/ipgb*.xml | sort | xargs -n 1 python3 ingest_us.py --db=store/patents_us.db
+ls $US_DATA_DIR/grant_files/*.dat | sort | xargs -n 1 python3 ingest_grant.py --db=store/patents_us.db
+ls $US_DATA_DIR/grant_files/pgb*.xml | sort | xargs -n 1 python3 ingest_grant.py --db=store/patents_us.db
+ls $US_DATA_DIR/grant_files/ipgb*.xml | sort | xargs -n 1 python3 ingest_grant.py --db=store/patents_us.db
+ls $US_DATA_DIR/apply_files/pab*.xml | sort | xargs -n 1 python3 ingest_apply.py --db=store/patents_us.db
+ls $US_DATA_DIR/apply_files/ipab*.xml | sort | xargs -n 1 python3 ingest_apply.py --db=store/patents_us.db
 ```
 
-This takes care of all three data formats historically used by the USPTO. To generate patent-IPC mappings, execute
-
-```bash
-python3 star_ipc.py --db=store/patents_us.db --psel="0%" --level=4
-python3 star_ipc.py --db=store/patents_cn.db --psel="%" --level=4
-```
-
-To generate the list of clean IPC codes, run
-
-```bash
-python3 gen_clean.py
-```
-
-in the `data` directory.

@@ -28,13 +28,13 @@ cn_trans = {
 cn_keys = list(cn_trans.keys())
 
 # us fields
-us_keys = [
+grant_keys = [
     'abstract', # Abstract
     # 'address', # Address
     'appdate', # Application date
     'appname', # Applicant name
     # 'appnum', # Application number
-    'claims', # Independent claim
+    'claims', # Independent claims
     'country', # Application Country
     'ipc1', # IPC code 1
     'ipc2', # IPC code 2
@@ -44,5 +44,23 @@ us_keys = [
     'city', # City
     'pubdate', # Publication date
     'title', # Title
+    'gen', # USPTO data format
+]
+
+apply_keys = [
+    'appdate', # Application date
+    'pubdate', # Publication date
+    'appnum', # Application number
+    'pubnum', # Publication number
+    'ipc1', # IPC code 1
+    'ipc2', # IPC code 2
+    'appname', # Applicant name
+    'path', # Data Path
+    # 'address', # Address
+    'city', # City
+    'state', # State
+    'country', # Application Country
+    'title', # Title
+    'abstract', # Abstract
     'gen', # USPTO data format
 ]

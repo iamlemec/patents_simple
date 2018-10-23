@@ -9,8 +9,12 @@ nltk.data.path.append('/media/Solid/data/nltk')
 
 # parse input arguments
 parser = argparse.ArgumentParser(description='Reduce text to purest form.')
-parser.add_argument('--data', type=str, default=None, help='patent database')
+parser.add_argument('--db', type=str, help='patent database')
+parser.add_argument('--chunk', type=int, default=100_000, help='chunking size for reading')
 args = parser.parse_args()
+
+def tostr(s):
+    return s if s is not None else ''
 
 def reduce_text(text):
     text = re.sub(r'[^a-zA-Z\n]', ' ', text) # remove non-text or newlines
@@ -22,19 +26,25 @@ wnl = WordNetLemmatizer()
 def lemmatize(text):
     return ' '.join([wnl.lemmatize(s) for s in text.split()])
 
-with sqlite3.connect(args.data) as con:
+with sqlite3.connect(args.db) as con:
     print('loading patent text')
-    cur = con.cursor()
-    cur.execute('select patnum,abstract from patent where abstract is not null')
-    pat_idee, pat_text = map(list, zip(*cur.fetchall()))
+    cur1, cur2 = con.cursor(), con.cursor()
+    cur1.execute(f'drop table if exists apply_reduced')
+    cur1.execute(f'create table apply_reduced (appnum text, text text)')
+    cur1.execute(f'create unique index if not exists idx_apply_reduced on apply_reduced (appnum)')
 
-    print('reducing patent text')
-    pat_redu = [reduce_text(s) for s in progress(pat_text, per=100_000)]
-    print('lemmatizing patent text')
-    pat_stem = [lemmatize(s) for s in progress(pat_redu, per=100_000)]
+    rows = 0
+    ret = cur2.execute(f'select appnum,title,abstract from apply')
+    while True:
+        data = ret.fetchmany(args.chunk)
+        if len(data) == 0:
+            break
+        rows += len(data)
+        print(rows)
 
-    print('storing patent text')
-    cur.execute('drop table if exists reduced')
-    cur.execute('create table reduced (patnum text, abstract text)')
-    cur.execute('create unique index if not exists idx_patnum on patent (patnum)')
-    cur.executemany('insert or replace into reduced values (?,?)', zip(pat_idee, pat_stem))
+        pat_idee, pat_title, pat_abstr = map(list, zip(*data))
+        pat_text = [tostr(pt)+'\n'+tostr(pa) for pt, pa in zip(pat_title, pat_abstr)]
+        pat_redu = [reduce_text(s) for s in pat_text]
+        pat_stem = [lemmatize(s) for s in pat_redu]
+
+        cur1.executemany(f'insert or replace into apply_reduced values (?,?)', zip(pat_idee, pat_stem))
