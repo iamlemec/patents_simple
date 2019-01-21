@@ -89,11 +89,11 @@ def add_patent(p):
     return True
 
 # tools
-def get_text(parent,tag,default=''):
+def get_text(parent, tag, default=''):
     child = parent.find(tag)
     return (child.text or default) if child is not None else default
 
-def raw_text(par,sep=''):
+def raw_text(par, sep=''):
     return sep.join(par.itertext()).strip()
 
 # parse it up
@@ -133,6 +133,7 @@ if gen == 2:
 
         # ipc code
         ipcsec = tech.find('classification-ipc')
+        pat['ipcver'] = get_text(ipcsec, 'classification-ipc-edition')
         if ipcsec is not None:
             ipclist = list(gen_ipc(ipcsec))
             if len(ipclist) > 0:
@@ -156,12 +157,25 @@ if gen == 2:
 elif gen == 3:
     main_tag = 'us-patent-application'
 
+    def gen_ipcr(ipcsec):
+        for ipc in ipcsec.findall('classification-ipcr'):
+            yield (
+                '%s%s%s%s%s' % (
+                    get_text(ipc, 'section'),
+                    get_text(ipc, 'class'),
+                    get_text(ipc, 'subclass'),
+                    get_text(ipc, 'main-group'),
+                    get_text(ipc, 'subgroup')
+                ),
+                get_text(ipc, 'ipc-version-indicator/date')
+            )
+
     def gen_ipc(ipcsec):
-        ipc0 = ipcsec.find('main-classification')
-        if ipc0 is not None:
-            yield ipc0.text or ''
+        ipcver = get_text(ipcsec, 'edition')
+        ipc0 = get_text(ipcsec, 'main-classification')
+        yield ipc0, ipcver
         for ipc in ipcsec.findall('further-classification'):
-            yield ipc.text or ''
+            yield (ipc.text or ''), ipcver
 
     def handle_patent(elem):
         pat = copy(default)
@@ -185,11 +199,17 @@ elif gen == 3:
         pat['title'] = get_text(bib, 'invention-title')
 
         # ipc code
+        ipcsec = bib.find('classifications-ipcr')
+        if ipcsec is not None:
+            ipclist = list(gen_ipcr(ipcsec))
+            pat['ipc1'], pat['ipcver'] = ipclist[0]
+            pat['ipc2'] = ';'.join([i for i, _ in ipclist])
+
         ipcsec = bib.find('classification-ipc')
         if ipcsec is not None:
             ipclist = list(gen_ipc(ipcsec))
-            pat['ipc1'] = ipclist[0]
-            pat['ipc2'] = ';'.join(ipclist)
+            pat['ipc1'], pat['ipcver'] = ipclist[0]
+            pat['ipc2'] = ';'.join([i for i, _ in ipclist])
 
         # applicant name and address
         address = bib.find('parties/applicants/applicant/addressbook/address')
