@@ -125,7 +125,6 @@ if gen == 2:
         if app is not None:
             pat['appnum'] = get_text(app, 'application-number/doc-number')
             pat['appdate'] = get_text(app, 'filing-date')
-        pat['appname'] = get_text(bib, 'assignee/organization-name')
 
         # title
         tech = bib.find('technical-information')
@@ -140,12 +139,16 @@ if gen == 2:
                 pat['ipc1'] = ipclist[0]
                 pat['ipc2'] = ';'.join(ipclist)
 
-        # applicant info
-        address = bib.find('correspondence-address/address')
-        if address is not None:
-            pat['city'] = get_text(address, 'city')
-            pat['state'] = get_text(address, 'state')
-            pat['country'] = get_text(address, 'country/country-code')
+        # first inventor address
+        resid = bib.find('inventors/first-named-inventor/residence')
+        if resid is not None:
+            address = resid.find('residence-us')
+            if address is None:
+                address = resid.find('residence-non-us')
+            if address is not None:
+                pat['city'] = get_text(address, 'city')
+                pat['state'] = get_text(address, 'state')
+                pat['country'] = get_text(address, 'country-code')
 
         # abstract
         abst = elem.find('subdoc-abstract')
@@ -193,7 +196,7 @@ elif gen == 3:
         # filing date
         pat['appnum'] = get_text(appref, 'document-id/doc-number')
         pat['appdate'] = get_text(appref, 'document-id/date')
-        pat['appname'] = get_text(bib, 'assignees/assignee/orgname')
+        pat['appname'] = get_text(bib, 'assignees/assignee/addressbook/orgname')
 
         # title
         pat['title'] = get_text(bib, 'invention-title')
@@ -211,7 +214,7 @@ elif gen == 3:
             pat['ipc1'], pat['ipcver'] = ipclist[0]
             pat['ipc2'] = ';'.join([i for i, _ in ipclist])
 
-        # applicant name and address
+        # first inventor address
         address = bib.find('parties/applicants/applicant/addressbook/address')
         if address is not None:
             pat['city'] = get_text(address, 'city')

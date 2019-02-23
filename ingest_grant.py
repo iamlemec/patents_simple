@@ -91,7 +91,7 @@ def add_patent(p):
     return True
 
 # tools
-def get_text(parent,tag,default=''):
+def get_text(parent, tag, default=''):
     child = parent.find(tag)
     return (child.text or default) if child is not None else default
 
@@ -108,10 +108,16 @@ def gen2_ipc(ipc):
         return ipc
 
 def gen3_ipc(ipcsec):
+    version = get_text(ipcsec, 'edition')
+    yield get_text(ipcsec, 'main-classification')
+    for ipc in ipcsec.findall('further-classification'):
+        yield ipc.text or ''
+
+def gen3r_ipc(ipcsec):
     for ipc in ipcsec.findall('classification-ipcr'):
-        yield get_text(ipc,'section') + get_text(ipc,'class') \
-            + get_text(ipc,'subclass') + get_text(ipc,'main-group') + '/' \
-            + get_text(ipc,'subgroup')
+        yield get_text(ipc, 'section') + get_text(ipc, 'class') \
+            + get_text(ipc, 'subclass') + get_text(ipc, 'main-group') + '/' \
+            + get_text(ipc, 'subgroup')
 
 def raw_text(par,sep=''):
     return sep.join(par.itertext())
@@ -126,6 +132,15 @@ def prune_patnum(pn):
         prefix = '' if prefix is None else prefix
     patnum = patnum.lstrip('0')[:7]
     return prefix + patnum
+
+def prune_appnum(an):
+    ret = re.match(r'([0-9]+)', an)
+    if ret is None:
+        appnum = ''
+    else:
+        appnum, = ret.groups()
+    appnum = appnum.lstrip('0')
+    return appnum
 
 # parse it up
 print('Parsing %s, gen %d' % (fname, gen))
@@ -166,6 +181,9 @@ if gen == 1:
         elif tag == 'WKU':
             if sec == 'PATN':
                 pat['patnum'] = prune_patnum(buf)
+        elif tag == 'APN':
+            if sec == 'PATN':
+                pat['appnum'] = prune_appnum(buf)
         elif tag == 'ISD':
             if sec == 'PATN':
                 pat['pubdate'] = buf
@@ -205,25 +223,23 @@ elif gen == 2:
         # top-level section
         bib = elem.find('SDOBI')
 
-        # published patent
+        # publication info
         pubref = bib.find('B100')
         pat['patnum'] = prune_patnum(get_text(pubref, 'B110/DNUM/PDAT'))
         pat['pubdate'] = get_text(pubref, 'B140/DATE/PDAT')
 
-        # filing date
+        # application info
         appref = bib.find('B200')
+        pat['appnum'] = prune_appnum(get_text(appref, 'B210/DNUM/PDAT'))
         pat['appdate'] = get_text(appref, 'B220/DATE/PDAT')
 
-        # ipc code
+        # reference info
         patref = bib.find('B500')
         ipcsec = patref.find('B510')
-        pat['ipc1'] = gen2_ipc(get_text(ipcsec, 'B511/PDAT'))
-        pat['ipc2'] = ';'.join(gen2_ipc(get_text(child, 'PDAT')) for child in ipcsec.findall('B512'))
-
-        # title
+        if ipcsec is not None:
+            pat['ipc1'] = gen2_ipc(get_text(ipcsec, 'B511/PDAT'))
+            pat['ipc2'] = ';'.join(gen2_ipc(get_text(child, 'PDAT')) for child in ipcsec.findall('B512'))
         pat['title'] = get_text(patref, 'B540/STEXT/PDAT')
-
-        # claims
         pat['claims'] = get_text(patref, 'B570/B577/PDAT')
 
         # applicant name and address
@@ -280,17 +296,26 @@ elif gen == 3:
         pat['pubdate'] = get_text(pubinfo, 'date')
 
         # filing date
-        pat['appdate'] = get_text(appref, 'document-id/date')
+        appinfo = appref.find('document-id')
+        pat['appnum'] = prune_appnum(get_text(appinfo, 'doc-number'))
+        pat['appdate'] = get_text(appinfo, 'date')
 
         # title
         pat['title'] = get_text(bib, 'invention-title')
 
         # ipc code
-        ipcsec = bib.find('classifications-ipcr')
+        ipclist = []
+        ipcsec = bib.find('classification-ipc')
         if ipcsec is not None:
+            pat['ipcver'] = get_text(ipcsec, 'edition')
             ipclist = list(gen3_ipc(ipcsec))
-            pat['ipc1'] = ipclist[0]
-            pat['ipc2'] = ';'.join(ipclist)
+        else:
+            ipcsec = bib.find('classifications-ipcr')
+            if ipcsec is not None:
+                pat['ipcver'] = get_text(ipcsec, 'classification-ipcr/ipc-version-indicator/date')
+                ipclist = list(gen3r_ipc(ipcsec))
+        pat['ipc1'] = ipclist.pop(0) if len(ipclist) > 0 else ''
+        pat['ipc2'] = ';'.join(ipclist)
 
         # claims
         pat['claims'] = get_text(bib, 'number-of-claims')
@@ -298,16 +323,17 @@ elif gen == 3:
         # applicant name and address
         assignee = bib.find('assignees/assignee/addressbook')
         if assignee is not None:
+            pat['appname'] = get_text(assignee, 'orgname')
             address = assignee.find('address')
             if address is not None:
-                pat['appname'] = get_text(assignee, 'orgname')
+                pat['city'] = get_text(address, 'city')
                 pat['state'] = get_text(address, 'state')
                 pat['country'] = get_text(address, 'country')
 
         # abstract
         abspar = elem.find('abstract')
         if abspar is not None:
-            pat['abstract'] = raw_text(abspar, sep=' ')
+            pat['abstract'] = raw_text(abspar, sep=' ').strip()
 
         # roll it in
         return add_patent(pat)

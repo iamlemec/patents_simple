@@ -33,9 +33,10 @@ grant_keys = [
     # 'address', # Address
     'appdate', # Application date
     'appname', # Applicant name
-    # 'appnum', # Application number
+    'appnum', # Application number
     'claims', # Independent claims
     'country', # Application Country
+    'ipcver', # IPC version
     'ipc1', # IPC code 1
     'ipc2', # IPC code 2
     'path', # Data Path
