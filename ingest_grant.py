@@ -12,6 +12,7 @@ from collections import OrderedDict
 from itertools import chain
 
 import schema
+from ingest_tools import *
 
 # parse input arguments
 parser = argparse.ArgumentParser(description='patent grant parser')
@@ -90,58 +91,6 @@ def add_patent(p):
 
     return True
 
-# tools
-def get_text(parent, tag, default=''):
-    child = parent.find(tag)
-    return (child.text or default) if child is not None else default
-
-def gen1_ipc(ipc):
-    if len(ipc) >= 8:
-        return ipc[:4] + ipc[4:7].lstrip() + '/' + ipc[7:]
-    else:
-        return ipc
-
-def gen2_ipc(ipc):
-    if len(ipc) >= 8:
-        return ipc[:4] + ipc[4:7].lstrip() + '/' + ipc[7:]
-    else:
-        return ipc
-
-def gen3_ipc(ipcsec):
-    version = get_text(ipcsec, 'edition')
-    yield get_text(ipcsec, 'main-classification')
-    for ipc in ipcsec.findall('further-classification'):
-        yield ipc.text or ''
-
-def gen3r_ipc(ipcsec):
-    for ipc in ipcsec.findall('classification-ipcr'):
-        yield get_text(ipc, 'section') + get_text(ipc, 'class') \
-            + get_text(ipc, 'subclass') + get_text(ipc, 'main-group') + '/' \
-            + get_text(ipc, 'subgroup')
-
-def raw_text(par,sep=''):
-    return sep.join(par.itertext())
-
-def prune_patnum(pn):
-    ret = re.match(r'([a-zA-Z]{1,2})?([0-9]+)', pn)
-    if ret is None:
-        prefix = ''
-        patnum = pn
-    else:
-        prefix, patnum = ret.groups()
-        prefix = '' if prefix is None else prefix
-    patnum = patnum.lstrip('0')[:7]
-    return prefix + patnum
-
-def prune_appnum(an):
-    ret = re.match(r'([0-9]+)', an)
-    if ret is None:
-        appnum = ''
-    else:
-        appnum, = ret.groups()
-    appnum = appnum.lstrip('0')
-    return appnum
-
 # parse it up
 print('Parsing %s, gen %d' % (fname, gen))
 if gen == 1:
@@ -165,11 +114,13 @@ if gen == 1:
             if pat is not None:
                 pat['ipc1'] = ipclist.pop(0) if len(ipclist) > 0 else ''
                 pat['ipc2'] = ';'.join(ipclist)
+                pat['appnum'] = src + apn
                 if not add_patent(pat):
                     break
             pat = copy(default)
             sec = 'PATN'
             ipclist = []
+            src, apn = '', ''
         elif tag in ['INVT', 'ASSG', 'PRIR', 'CLAS', 'UREF', 'FREF', 'OREF', 'LREP', 'PCTA', 'ABST']:
             sec = tag
         elif tag in ['PAL', 'PAR', 'PAC', 'PA0', 'PA1']:
@@ -181,9 +132,12 @@ if gen == 1:
         elif tag == 'WKU':
             if sec == 'PATN':
                 pat['patnum'] = prune_patnum(buf)
+        elif tag == 'SRC':
+            if sec == 'PATN':
+                src = buf.strip()
         elif tag == 'APN':
             if sec == 'PATN':
-                pat['appnum'] = prune_appnum(buf)
+                apn = buf[:6]
         elif tag == 'ISD':
             if sec == 'PATN':
                 pat['pubdate'] = buf
@@ -192,7 +146,10 @@ if gen == 1:
                 pat['appdate'] = buf
         elif tag == 'ICL':
             if sec == 'CLAS':
-                ipclist.append(gen1_ipc(buf))
+                ipclist.append(pad_ipc(buf))
+        elif tag == 'EDF':
+            if sec == 'CLAS':
+                pat['ipcver'] = buf
         elif tag == 'TTL':
             if sec == 'PATN':
                 pat['title'] = buf
@@ -204,7 +161,7 @@ if gen == 1:
                 pat['appname'] = buf
         elif tag == 'CTY':
             if sec == 'ASSG':
-                pat['city'] = buf.upper()
+                pat['city'] = buf
         elif tag == 'STA':
             if sec == 'ASSG':
                 pat['state'] = buf
@@ -230,15 +187,18 @@ elif gen == 2:
 
         # application info
         appref = bib.find('B200')
-        pat['appnum'] = prune_appnum(get_text(appref, 'B210/DNUM/PDAT'))
+        pat['appnum'] = get_text(appref, 'B210/DNUM/PDAT')
         pat['appdate'] = get_text(appref, 'B220/DATE/PDAT')
 
         # reference info
         patref = bib.find('B500')
+        ipclist = []
         ipcsec = patref.find('B510')
         if ipcsec is not None:
-            pat['ipc1'] = gen2_ipc(get_text(ipcsec, 'B511/PDAT'))
-            pat['ipc2'] = ';'.join(gen2_ipc(get_text(child, 'PDAT')) for child in ipcsec.findall('B512'))
+            pat['ipcver'] = get_text(ipcsec, 'B516/PDAT')
+            ipclist = list(gen15_ipc(ipcsec))
+        pat['ipc1'] = ipclist.pop(0) if len(ipclist) > 0 else ''
+        pat['ipc2'] = ';'.join(ipclist)
         pat['title'] = get_text(patref, 'B540/STEXT/PDAT')
         pat['claims'] = get_text(patref, 'B570/B577/PDAT')
 
@@ -248,9 +208,9 @@ elif gen == 2:
             pat['appname'] = get_text(ownref, 'NAM/ONM/STEXT/PDAT')
             address = ownref.find('ADR')
             if address is not None:
-                pat['city'] = get_text(address, 'CITY/PDAT').upper()
+                pat['city'] = get_text(address, 'CITY/PDAT')
                 pat['state'] = get_text(address, 'STATE/PDAT')
-                pat['country'] = get_text(address, 'CTRY/PDAT', default='US')
+                pat['country'] = get_text(address, 'CTRY/PDAT')
 
         # abstract
         abspars = elem.findall('SDOAB/BTEXT/PARA')
@@ -297,7 +257,7 @@ elif gen == 3:
 
         # filing date
         appinfo = appref.find('document-id')
-        pat['appnum'] = prune_appnum(get_text(appinfo, 'doc-number'))
+        pat['appnum'] = get_text(appinfo, 'doc-number')
         pat['appdate'] = get_text(appinfo, 'date')
 
         # title
@@ -308,7 +268,7 @@ elif gen == 3:
         ipcsec = bib.find('classification-ipc')
         if ipcsec is not None:
             pat['ipcver'] = get_text(ipcsec, 'edition')
-            ipclist = list(gen3_ipc(ipcsec))
+            ipclist = list(gen3g_ipc(ipcsec))
         else:
             ipcsec = bib.find('classifications-ipcr')
             if ipcsec is not None:

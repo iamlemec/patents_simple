@@ -12,6 +12,7 @@ from collections import OrderedDict
 from itertools import chain
 
 import schema
+from ingest_tools import *
 
 # parse input arguments
 parser = argparse.ArgumentParser(description='patent application parser')
@@ -27,7 +28,7 @@ args = parser.parse_args()
 write = args.db is not None
 
 # detect generation
-(fdir, fname) = os.path.split(args.path)
+fdir, fname = os.path.split(args.path)
 if fname.startswith('pab'):
     gen = 2
 elif fname.startswith('ipab'):
@@ -49,13 +50,14 @@ if write:
     if args.clobber:
         cur.execute('drop table if exists apply')
         cur.execute('drop index if exists idx_appnum')
-    sig = ', '.join(['%s text' % k for k in skeys])
-    cur.execute('create table if not exists apply (%s)' % sig)
+    sig = ', '.join([f'{k} text' for k in skeys])
+    cur.execute(f'create table if not exists apply ({sig})')
     cur.execute('create unique index if not exists idx_appnum on apply (appnum)')
 
 # storage
 pats = []
-cmd = 'insert or replace into apply values (%s)' % ','.join(['?' for _ in skeys])
+qsig = ','.join(['?' for _ in skeys])
+cmd = f'insert or replace into apply values ({qsig})'
 def commit_patents():
     cur.executemany(cmd, pats)
     con.commit()
@@ -76,9 +78,9 @@ def add_patent(p):
     # output
     if args.output > 0:
         if n % args.output == 0:
-            print('pat = %d'%n)
+            print(f'pat = {n}')
             for (k, v) in p.items():
-                print('%s = %s' % (k, v))
+                print(f'{k} = {v}')
             print()
 
     # break
@@ -88,25 +90,10 @@ def add_patent(p):
 
     return True
 
-# tools
-def get_text(parent, tag, default=''):
-    child = parent.find(tag)
-    return (child.text or default) if child is not None else default
-
-def raw_text(par, sep=''):
-    return sep.join(par.itertext()).strip()
-
 # parse it up
-print('Parsing %s, gen %d' % (fname, gen))
+print(f'Parsing {fname}, gen {gen}')
 if gen == 2:
     main_tag = 'patent-application-publication'
-
-    def gen_ipc(ipcsec):
-        ipc0 = ipcsec.find('classification-ipc-primary')
-        if ipc0 is not None:
-            yield get_text(ipc0, 'ipc')
-        for ipc in ipcsec.findall('classification-ipc-secondary'):
-            yield get_text(ipc, 'ipc')
 
     def handle_patent(elem):
         pat = copy(default)
@@ -117,7 +104,6 @@ if gen == 2:
         # publication data
         pub = bib.find('document-id')
         if pub is not None:
-            pat['pubnum'] = get_text(pub, 'doc-number')
             pat['pubdate'] = get_text(pub, 'document-date')
 
         # application data
@@ -132,12 +118,14 @@ if gen == 2:
 
         # ipc code
         ipcsec = tech.find('classification-ipc')
-        pat['ipcver'] = get_text(ipcsec, 'classification-ipc-edition')
         if ipcsec is not None:
-            ipclist = list(gen_ipc(ipcsec))
-            if len(ipclist) > 0:
-                pat['ipc1'] = ipclist[0]
-                pat['ipc2'] = ';'.join(ipclist)
+            pat['ipcver'] = get_text(ipcsec, 'classification-ipc-edition').lstrip('0')
+            ipclist = list(gen2_ipc(ipcsec))
+            pat['ipc1'] = ipclist.pop(0) if len(ipclist) > 0 else ''
+            pat['ipc2'] = ';'.join(ipclist)
+
+        # assignee information
+        pat['appname'] = get_text(bib, 'assignee/organization-name')
 
         # first inventor address
         resid = bib.find('inventors/first-named-inventor/residence')
@@ -160,26 +148,6 @@ if gen == 2:
 elif gen == 3:
     main_tag = 'us-patent-application'
 
-    def gen_ipcr(ipcsec):
-        for ipc in ipcsec.findall('classification-ipcr'):
-            yield (
-                '%s%s%s%s%s' % (
-                    get_text(ipc, 'section'),
-                    get_text(ipc, 'class'),
-                    get_text(ipc, 'subclass'),
-                    get_text(ipc, 'main-group'),
-                    get_text(ipc, 'subgroup')
-                ),
-                get_text(ipc, 'ipc-version-indicator/date')
-            )
-
-    def gen_ipc(ipcsec):
-        ipcver = get_text(ipcsec, 'edition')
-        ipc0 = get_text(ipcsec, 'main-classification')
-        yield ipc0, ipcver
-        for ipc in ipcsec.findall('further-classification'):
-            yield (ipc.text or ''), ipcver
-
     def handle_patent(elem):
         pat = copy(default)
 
@@ -190,7 +158,6 @@ elif gen == 3:
 
         # published patent
         pubinfo = pubref.find('document-id')
-        pat['pubnum'] = get_text(pubinfo, 'doc-number')
         pat['pubdate'] = get_text(pubinfo, 'date')
 
         # filing date
@@ -202,20 +169,23 @@ elif gen == 3:
         pat['title'] = get_text(bib, 'invention-title')
 
         # ipc code
-        ipcsec = bib.find('classifications-ipcr')
-        if ipcsec is not None:
-            ipclist = list(gen_ipcr(ipcsec))
-            pat['ipc1'], pat['ipcver'] = ipclist[0]
-            pat['ipc2'] = ';'.join([i for i, _ in ipclist])
-
+        ipclist = []
         ipcsec = bib.find('classification-ipc')
         if ipcsec is not None:
-            ipclist = list(gen_ipc(ipcsec))
-            pat['ipc1'], pat['ipcver'] = ipclist[0]
-            pat['ipc2'] = ';'.join([i for i, _ in ipclist])
+            pat['ipcver'] = get_text(ipcsec, 'edition').lstrip('0')
+            ipclist = list(gen3a_ipc(ipcsec))
+        else:
+            ipcsec = bib.find('classifications-ipcr')
+            if ipcsec is not None:
+                pat['ipcver'] = get_text(ipcsec, 'classification-ipcr/ipc-version-indicator/date')
+                ipclist = list(gen3r_ipc(ipcsec))
+        pat['ipc1'] = ipclist.pop(0) if len(ipclist) > 0 else ''
+        pat['ipc2'] = ';'.join(ipclist)
 
         # first inventor address
         address = bib.find('parties/applicants/applicant/addressbook/address')
+        if address is None:
+            address = bib.find('us-parties/us-applicants/us-applicant/addressbook/address')
         if address is not None:
             pat['city'] = get_text(address, 'city')
             pat['state'] = get_text(address, 'state')
@@ -257,4 +227,4 @@ if write:
     cur.close()
     con.close()
 
-print('Found %d patents' % n)
+print(f'Found {n} patents')

@@ -52,7 +52,7 @@ apply_keys = [
     'appdate', # Application date
     'pubdate', # Publication date
     'appnum', # Application number
-    'pubnum', # Publication number
+    # 'pubnum', # Publication number
     'ipcver', # IPC version
     'ipc1', # IPC code 1
     'ipc2', # IPC code 2
