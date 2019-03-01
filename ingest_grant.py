@@ -135,6 +135,7 @@ if gen == 1:
         elif tag == 'SRC':
             if sec == 'PATN':
                 src = buf.strip()
+                src = '29' if src == 'D' else src.zfill(2) # design patents get series code 29
         elif tag == 'APN':
             if sec == 'PATN':
                 apn = buf[:6]
@@ -146,7 +147,7 @@ if gen == 1:
                 pat['appdate'] = buf
         elif tag == 'ICL':
             if sec == 'CLAS':
-                ipclist.append(pad_ipc(buf))
+                ipclist.append(pad_ipc(buf.strip()))
         elif tag == 'EDF':
             if sec == 'CLAS':
                 pat['ipcver'] = buf
