@@ -11,8 +11,7 @@ from copy import copy
 from collections import OrderedDict
 from itertools import chain
 
-import schema
-from ingest_tools import *
+from parse_tools import *
 
 # parse input arguments
 parser = argparse.ArgumentParser(description='patent grant parser')
@@ -38,8 +37,29 @@ elif fname.startswith('ipgb'):
 else:
     raise Exception('Unknown format')
 
+# us fields
+grant_keys = [
+    'abstract', # Abstract
+    # 'address', # Address
+    'appdate', # Application date
+    'appname', # Applicant name
+    'appnum', # Application number
+    'claims', # Independent claims
+    'country', # Application Country
+    'ipcver', # IPC version
+    'ipc1', # IPC code 1
+    'ipc2', # IPC code 2
+    'path', # Data Path
+    'patnum', # Patent number
+    'state', # State
+    'city', # City
+    'pubdate', # Publication date
+    'title', # Title
+    'gen', # USPTO data format
+]
+
 # default values
-skeys = sorted(schema.grant_keys)
+skeys = sorted(grant_keys)
 nkeys = len(skeys)
 default = OrderedDict([(k, None) for k in skeys])
 default['gen'] = gen

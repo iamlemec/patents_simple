@@ -11,8 +11,7 @@ from copy import copy
 from collections import OrderedDict
 from itertools import chain
 
-import schema
-from ingest_tools import *
+from parse_tools import *
 
 # parse input arguments
 parser = argparse.ArgumentParser(description='patent application parser')
@@ -36,8 +35,27 @@ elif fname.startswith('ipab'):
 else:
     raise Exception('Unknown format')
 
+apply_keys = [
+    'appdate', # Application date
+    'pubdate', # Publication date
+    'appnum', # Application number
+    # 'pubnum', # Publication number
+    'ipcver', # IPC version
+    'ipc1', # IPC code 1
+    'ipc2', # IPC code 2
+    'appname', # Applicant name
+    'path', # Data Path
+    # 'address', # Address
+    'city', # City
+    'state', # State
+    'country', # Application Country
+    'title', # Title
+    'abstract', # Abstract
+    'gen', # USPTO data format
+]
+
 # default values
-skeys = sorted(schema.apply_keys)
+skeys = sorted(apply_keys)
 nkeys = len(skeys)
 default = OrderedDict([(k, None) for k in skeys])
 default['gen'] = gen
