@@ -13,6 +13,12 @@ import simcore as csimcore
 def murmur(x):
     return np.uint64(mmh3.hash(x, signed=False))
 
+# k-shingles: pairs of adjacent k-length substrings (in order)
+def shingle(s, k=2):
+    k = min(len(s), k)
+    for i in range(len(s) - k + 1):
+        yield s[i:i+k]
+
 # compute actual simhash
 class Simhash:
     def __init__(self):

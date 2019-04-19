@@ -16,7 +16,7 @@ from parse_tools import *
 # parse input arguments
 parser = argparse.ArgumentParser(description='patent application parser')
 parser.add_argument('path', type=str, help='path of file to parse')
-parser.add_argument('--db', type=str, default=None, help='database file to store to')
+parser.add_argument('--db', type=str, default='store/patents.db', help='database file to store to')
 parser.add_argument('--clobber', action='store_true', help='delete database and restart')
 parser.add_argument('--output', type=int, default=0, help='print out patents per')
 parser.add_argument('--limit', type=int, default=0, help='only parse n patents')

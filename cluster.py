@@ -5,6 +5,7 @@ from itertools import chain, repeat, product
 from collections import defaultdict
 from math import ceil
 
+import re
 import sqlite3
 import numpy as np
 import pandas as pd
@@ -18,7 +19,8 @@ import simhash as sh
 
 # standardize firm name
 def name_standardize(name):
-    name = re.sub(r'\'S|\(.*\)|\.', ' ', name)
+    name = name.lower()
+    name = re.sub(r'\'s|\(.*\)|\.', ' ', name)
     name = re.sub(r'[^\w\s]', ' ', name)
     name = re.sub(r'[ ]{2,}', ' ', name)
     return name.strip()
@@ -26,55 +28,60 @@ def name_standardize(name):
 def generate_names(con):
     print('generating owner names')
 
-    apply = pd.read_sql('select patnum,appname from apply', con)
-    grant = pd.read_sql('select patnum,appname from grant', con)
+    apply = pd.read_sql('select appnum,appname from apply where appname is not null', con)
+    grant = pd.read_sql('select patnum,appname from grant where appname is not null', con)
+
+    apply = apply[apply['appname'].str.len()>0]
+    grant = grant[grant['appname'].str.len()>0]
 
     apply['name'] = apply['appname'].apply(name_standardize)
     grant['name'] = grant['appname'].apply(name_standardize)
 
     names = pd.concat([apply['name'], grant['name']], ignore_index=True)
     names = names.rename('name').rename_axis('id').reset_index()
-    names.to_sql('names', con)
+    names.to_sql('name', con, if_exists='replace')
 
     con.commit()
 
 # k = 8, thresh = 4 works well
-def owner_cluster(con, cur, nitem=None, reverse=True, nshingle=2, store=True, **kwargs):
+def owner_cluster(con, nitem=None, reverse=True, nshingle=2, store=True, **kwargs):
     print('generating hashes and pairs')
+
+    cur = con.cursor()
 
     c = sh.Cluster(**kwargs)
 
-    cmd = 'select ownerid,name from owner'
+    cmd = 'select id,name from name'
     if reverse:
         cmd += ' order by rowid desc'
     if nitem:
         cmd += ' limit %i' % nitem
 
     name_dict = {}
-    for (i,(ownerid,name)) in enumerate(cur.execute(cmd)):
+    for i, (ownerid, name) in enumerate(cur.execute(cmd)):
         words = name.split()
-        shings = list(sh.shingle(name,nshingle))
+        shings = list(sh.shingle(name, nshingle))
 
         features = shings + words
-        weights = list(np.linspace(1.0,0.0,len(shings))) + list(np.linspace(1.0,0.0,len(words)))
+        weights = list(np.linspace(1.0, 0.0, len(shings))) + list(np.linspace(1.0, 0.0, len(words)))
 
-        c.add(features,weights=weights,label=ownerid)
+        c.add(features, weights=weights, label=ownerid)
         name_dict[ownerid] = name
 
-        if i%10000 == 0:
+        if i % 10000 == 0:
             print(i)
 
     ipairs = c.unions
-    npairs = [(name_dict[i1],name_dict[i2]) for (i1,i2) in ipairs]
+    npairs = [(name_dict[i1], name_dict[i2]) for i1, i2 in ipairs]
     print('Found %i pairs' % len(ipairs))
 
     if store:
         cur.execute('drop table if exists pair')
         cur.execute('create table pair (ownerid1 int, ownerid2 int, name1 text, name2 text)')
-        cur.executemany('insert into pair values (?,?,?,?)',[(o1,o2,n1,n2) for ((o1,o2),(n1,n2)) in zip(ipairs,npairs)])
+        cur.executemany('insert into pair values (?,?,?,?)', [(o1, o2, n1, n2) for (o1, o2), (n1, n2) in zip(ipairs, npairs)])
         con.commit()
     else:
-        return (ipairs,npairs)
+        return ipairs, npairs
 
 # compute distances on owners in same cluster
 def find_components(con, cur, thresh=0.85, store=True):
@@ -185,6 +192,6 @@ if __name__ == "__main__":
 
     # go through steps
     generate_names(con)
-    owner_cluster(con, cur)
+    owner_cluster(con)
     find_components(con, cur)
     merge_components(con, cur)
