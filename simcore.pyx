@@ -2,11 +2,11 @@ DEF dim = 64
 
 cdef unsigned long masks[dim]
 for i in range(dim):
-  masks[i] = 1 << i
+    masks[i] = 1 << i
 
 cdef float v[dim]
 
-def simcore(hashish,weights):
+def simcore(hashish, weights):
     cdef unsigned long ans
     cdef int n = len(hashish)
     cdef unsigned long h

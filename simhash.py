@@ -1,17 +1,17 @@
 #
-# locally sensitive hashing code
+# locality sensitive hashing code
 #
 
 from collections import defaultdict
 import numpy as np
-import mmh3
+import xxhash
 
 import pyximport
 pyximport.install()
 import simcore as csimcore
 
-def murmur(x):
-    return np.uint64(mmh3.hash(x, signed=False))
+def hash0(x):
+    return np.uint64(xxhash.xxh64_intdigest(x))
 
 # k-shingles: pairs of adjacent k-length substrings (in order)
 def shingle(s, k=2):
@@ -23,15 +23,15 @@ def shingle(s, k=2):
 class Simhash:
     def __init__(self):
         self.dim = 64
-        self.unums = list(map(np.uint64,range(self.dim)))
+        self.unums = [np.uint64(x) for x in range(self.dim)]
         self.masks = [self.unums[1] << n for n in self.unums]
 
     def simhash(self, features, weights=None):
         if weights is None:
             weights = [1.0]*len(features)
-        hashish = map(murmur, features)
+        hashish = [hash0(f) for f in features]
         v = [0.0]*self.dim
-        for (h,w) in zip(hashish, weights):
+        for h, w in zip(hashish, weights):
             for i in range(self.dim):
                 v[i] += w if h & self.masks[i] else -w
         ans = self.unums[0]
@@ -48,7 +48,7 @@ class CSimhash():
     def simhash(self, features, weights=None):
         if weights is None:
             weights = [1.0]*len(features)
-        hashish = [murmur(f) for f in features]
+        hashish = [hash0(f) for f in features]
         ret = np.uint64(self.simcore(hashish, weights))
         return ret
 

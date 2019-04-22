@@ -17,3 +17,10 @@ ls $US_DATA_DIR/apply_files/ipab*.xml | sort | xargs -n 1 python3 parse_apply.py
 ## Processing
 
 You can generate an IPC level table with `gen_ipc.py`. To generate reduced and stemmed (requires NLTK) abstract texts, run `gen_text.py`.
+
+## Performance
+
+| routine | time | memory |
+|---------|------|--------|
+| `cluster.unique_names` | 57s | 2 GB |
+| `cluster.filter_pairs` | | 32 GB |
