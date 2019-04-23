@@ -43,16 +43,13 @@ def unique_names(con):
     print(f'found {len(names)} names')
 
 # k = 8, thresh = 4 works well
-def filter_pairs(con, nshingle=2, k=8, thresh=4, limit=None):
+def filter_pairs(con, nshingle=2, k=8, thresh=4):
     print('filtering pairs')
 
     c = sh.Cluster(k=k, thresh=thresh)
     name_dict = {}
 
-    cmd = 'select id,name from name'
-    if limit: cmd += f' limit {limit}'
-    names = pd.read_sql(cmd, con)
-
+    names = pd.read_sql('select id,name from name', con)
     for i, id, name in names.itertuples():
         words = name.split()
         shings = list(sh.shingle(name, nshingle))
